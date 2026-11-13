@@ -13,6 +13,7 @@ struct Block {
 struct Gap {
 	bool ok = false;
 	float center = 0.f;     // height of the middle of the gap
+	float size = 0.f;
 	float x0 = 0.f;         // where the gap starts / ends along x
 	float x1 = 0.f;
 };
@@ -31,6 +32,7 @@ static void rebuildBlocks(float px, float range) {
 		if (obj->m_objectType != GameObjectType::Solid) continue;
 
 		CCRect r = obj->getObjectRect();
+		if (r.size.width < 0.5f || r.size.height < 0.5f) continue;
 		if (r.origin.x + r.size.width < px - 30.f) continue;
 		if (r.origin.x > px + range) continue;
 
@@ -38,36 +40,49 @@ static void rebuildBlocks(float px, float range) {
 			r.origin.x, r.origin.x + r.size.width,
 			r.origin.y, r.origin.y + r.size.height
 		});
-		if (g_blocks.size() >= 300) break;
+		if (g_blocks.size() >= 150) break;
 	}
 }
 
-// finds the nearest gap: a block above and a block below that overlap along x
-static Gap findGap(float px, float py, float half, float range, float maxGap) {
+// true if some other block sits inside the gap and closes it
+static bool gapIsBlocked(const Block& lo, const Block& hi, float ox0, float ox1) {
+	for (auto& b : g_blocks) {
+		if (&b == &lo || &b == &hi) continue;
+		if (b.x1 <= ox0 || b.x0 >= ox1) continue;
+		if (b.y1 <= lo.y1 + 0.01f || b.y0 >= hi.y0 - 0.01f) continue;
+		return true;
+	}
+	return false;
+}
+
+// finds the nearest narrow gap between a lower and an upper block.
+// It uses only the blocks, so it does not matter where the wave is.
+static Gap findGap(float px, float half, float range, float maxGap) {
 	Gap best;
 	float minGap = half * 2.f;   // smaller than the wave: impossible
 
-	for (auto& up : g_blocks) {
-		if ((up.y0 + up.y1) * 0.5f <= py) continue;      // must be above the wave
-		if (up.x1 < px - half || up.x0 > px + range) continue;
+	for (auto& lo : g_blocks) {
+		if (lo.x1 < px - half || lo.x0 > px + range) continue;
 
-		for (auto& dn : g_blocks) {
-			if ((dn.y0 + dn.y1) * 0.5f > py) continue;   // must be below the wave
-			if (dn.x1 < px - half || dn.x0 > px + range) continue;
+		for (auto& hi : g_blocks) {
+			if (hi.x1 < px - half || hi.x0 > px + range) continue;
+
+			float size = hi.y0 - lo.y1;            // empty space between them
+			if (size < minGap || size > maxGap) continue;
 
 			// both blocks must exist at the same x for a few units
-			float ox0 = std::max(up.x0, dn.x0);
-			float ox1 = std::min(up.x1, dn.x1);
+			float ox0 = std::max(lo.x0, hi.x0);
+			float ox1 = std::min(lo.x1, hi.x1);
 			if (ox1 - ox0 < 2.f) continue;
 			if (ox1 < px - half) continue;
 
-			float size = up.y0 - dn.y1;
-			if (size < minGap || size > maxGap) continue;
+			if (gapIsBlocked(lo, hi, ox0, ox1)) continue;
 
 			// take the gap that starts first
 			if (!best.ok || ox0 < best.x0) {
 				best.ok = true;
-				best.center = (up.y0 + dn.y1) * 0.5f;
+				best.center = (hi.y0 + lo.y1) * 0.5f;
+				best.size = size;
 				best.x0 = ox0;
 				best.x1 = ox1;
 			}
@@ -85,6 +100,7 @@ public:
 		Gap gap;
 		bool haveLast = false;
 		bool lastHold = false;
+		float lastLogX = -1.f;
 	};
 
 	// settings, blocks and gap are refreshed rarely, not on every step
@@ -114,10 +130,18 @@ public:
 		float range = f->approach + 300.f;
 
 		float px = this->getPositionX();
-		float py = this->getPositionY();
 
 		rebuildBlocks(px, range + 100.f);
-		f->gap = findGap(px, py, half, range, maxGap);
+		f->gap = findGap(px, half, range, maxGap);
+
+		// debug: tell about every new gap once
+		if (f->gap.ok && std::fabs(f->gap.x0 - f->lastLogX) > 1.f) {
+			f->lastLogX = f->gap.x0;
+			log::info(
+				"Gap Spam: gap x {:.1f}..{:.1f}, center y {:.1f}, size {:.1f}, wave y {:.1f}",
+				f->gap.x0, f->gap.x1, f->gap.center, f->gap.size, this->getPositionY()
+			);
+		}
 	}
 
 	void update(float dt) {

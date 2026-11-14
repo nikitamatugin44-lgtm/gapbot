@@ -1,4 +1,3 @@
-
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/TextInput.hpp>
@@ -571,19 +570,204 @@ public:
 // ==========================================
 
 class $modify(SpamPlayer, PlayerObject) {
-
 public:
-
     struct Fields {
         float lastY = 0.f;
+        float correctionY = 0.f;
+        float bestY = 0.f;
+        float bestError = 999999.f;
 
         bool haveLast = false;
         bool lastHold = false;
-
         bool phaseHold = false;
+        bool correcting = false;
+        bool correctionLocked = false;
 
         int phaseCount = 0;
+        int activeZone = -1;
     };
+
+    void setHold(bool hold) {
+        auto f = m_fields.self();
+
+        if (f->haveLast && f->lastHold == hold)
+            return;
+
+        if (hold)
+            this->pushButton(static_cast<PlayerButton>(1));
+        else
+            this->releaseButton(static_cast<PlayerButton>(1));
+
+        f->lastHold = hold;
+        f->haveLast = true;
+    }
+
+    void spamStep() {
+        auto f = m_fields.self();
+
+        if (f->phaseCount <= 0) {
+            f->phaseHold = !f->phaseHold;
+            f->phaseCount = f->phaseHold
+                ? g_cfg.hold
+                : g_cfg.release;
+        }
+
+        f->phaseCount--;
+        this->setHold(f->phaseHold);
+    }
+
+    void resetPositioning() {
+        auto f = m_fields.self();
+
+        f->correcting = false;
+        f->correctionLocked = false;
+        f->bestError = 999999.f;
+        f->phaseCount = 0;
+        f->activeZone = -1;
+        f->haveLast = false;
+    }
+
+    void update(float dt) {
+        PlayerObject::update(dt);
+
+        if (g_reload)
+            loadConfig();
+
+        auto f = m_fields.self();
+
+        float py = this->getPositionY();
+        float px = this->getPositionX();
+
+        if (!g_cfg.enabled) {
+            resetPositioning();
+            return;
+        }
+
+        if (g_cfg.always) {
+            f->activeZone = -1;
+            f->correcting = false;
+            f->correctionLocked = false;
+            spamStep();
+            return;
+        }
+
+        if (!m_isDart || g_cfg.zones.empty()) {
+            resetPositioning();
+            return;
+        }
+
+        // Find active zone
+        int zoneIndex = -1;
+
+        for (int i = 0; i < (int)g_cfg.zones.size(); i++) {
+            auto& z = g_cfg.zones[i];
+
+            if (px >= z.x0 - g_cfg.approach && px <= z.x1) {
+                zoneIndex = i;
+                break;
+            }
+        }
+
+        if (zoneIndex == -1) {
+            resetPositioning();
+            return;
+        }
+
+        auto& zone = g_cfg.zones[zoneIndex];
+
+        // New zone
+        if (f->activeZone != zoneIndex) {
+            f->activeZone = zoneIndex;
+            f->correcting = true;
+            f->correctionLocked = false;
+            f->correctionY = zone.y;
+            f->bestY = py;
+            f->bestError = std::fabs(zone.y - py);
+            f->lastY = py;
+            f->phaseCount = 0;
+        }
+
+        if (!f->correcting) {
+            spamStep();
+            return;
+        }
+
+        // Initialize previous position
+        if (!f->haveLast) {
+            f->lastY = py;
+            f->haveLast = true;
+        }
+
+        float previousY = f->lastY;
+        float targetY = f->correctionY;
+
+        float previousError = targetY - previousY;
+        float currentError = targetY - py;
+
+        float currentDistance = std::fabs(zone.y - py);
+
+        // Remember the closest position to the requested Y
+        if (currentDistance < f->bestError) {
+            f->bestError = currentDistance;
+            f->bestY = py;
+        }
+
+        // Detect crossing the target height
+        bool crossed =
+            (previousError > 0.f && currentError < 0.f) ||
+            (previousError < 0.f && currentError > 0.f);
+
+        if (crossed && !f->correctionLocked) {
+            // Choose the closest of the two observed positions
+            float previousDistance = std::fabs(zone.y - previousY);
+            float currentDistance = std::fabs(zone.y - py);
+
+            f->correctionY =
+                previousDistance <= currentDistance
+                ? previousY
+                : py;
+
+            f->correctionLocked = true;
+        }
+
+        // After crossing, return to the closest observed position
+        if (f->correctionLocked) {
+            float correctionError = f->correctionY - py;
+
+            if (std::fabs(correctionError) <= 0.00001f) {
+                f->lastY = py;
+                f->correcting = false;
+                f->phaseCount = 0;
+
+                spamStep();
+                return;
+            }
+
+            bool wantUp = correctionError > 0.f;
+            bool hold = (wantUp == !m_isUpsideDown);
+
+            f->lastY = py;
+            setHold(hold);
+            return;
+        }
+
+        // Exact target reached
+        if (std::fabs(currentError) <= 0.00001f) {
+            f->correctionY = py;
+            f->lastY = py;
+            f->correcting = false;
+            spamStep();
+            return;
+        }
+
+        // Continue moving towards target
+        bool wantUp = currentError > 0.f;
+        bool hold = (wantUp == !m_isUpsideDown);
+
+        f->lastY = py;
+        setHold(hold);
+    }
+};
 
     // --------------------------------------
     // BUTTON CONTROL

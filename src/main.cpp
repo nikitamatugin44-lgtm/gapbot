@@ -1,186 +1,427 @@
 #include <Geode/Geode.hpp>
+#include <Geode/ui/Popup.hpp>
+#include <Geode/ui/TextInput.hpp>
 #include <Geode/modify/PlayerObject.hpp>
+#include <Geode/modify/PauseLayer.hpp>
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <string>
 
 using namespace geode::prelude;
 
-struct Block {
-	float x0, x1, y0, y1;   // edges of a solid block
+// a place where the wave must spam
+struct Zone {
+	float x0;   // zone starts here
+	float x1;   // zone ends here
+	float y;    // the height the wave flies to and spams at
 };
 
-struct Gap {
-	bool ok = false;
-	float center = 0.f;     // height of the middle of the gap
-	float size = 0.f;
-	float x0 = 0.f;         // where the gap starts / ends along x
-	float x1 = 0.f;
+struct Config {
+	bool enabled = true;
+	bool always = false;     // autoclicker: spam everywhere, in every gamemode
+	int hold = 1;            // steps pressed
+	int release = 1;         // steps released
+	float approach = 80.f;   // start flying to y this many units before the zone
+	std::vector<Zone> zones;
 };
 
-static std::vector<Block> g_blocks;
+static Config g_cfg;
+static bool g_reload = true;
 
-// collects the solid blocks around the player
-static void rebuildBlocks(float px, float range) {
-	g_blocks.clear();
-
-	auto pl = PlayLayer::get();
-	if (!pl || !pl->m_objects) return;
-
-	for (auto obj : CCArrayExt<GameObject*>(pl->m_objects)) {
-		if (!obj) continue;
-		if (obj->m_objectType != GameObjectType::Solid) continue;
-
-		CCRect r = obj->getObjectRect();
-		if (r.size.width < 0.5f || r.size.height < 0.5f) continue;
-		if (r.origin.x + r.size.width < px - 30.f) continue;
-		if (r.origin.x > px + range) continue;
-
-		g_blocks.push_back(Block{
-			r.origin.x, r.origin.x + r.size.width,
-			r.origin.y, r.origin.y + r.size.height
-		});
-		if (g_blocks.size() >= 150) break;
-	}
-}
-
-// true if some other block sits inside the gap and closes it
-static bool gapIsBlocked(const Block& lo, const Block& hi, float ox0, float ox1) {
-	for (auto& b : g_blocks) {
-		if (&b == &lo || &b == &hi) continue;
-		if (b.x1 <= ox0 || b.x0 >= ox1) continue;
-		if (b.y1 <= lo.y1 + 0.01f || b.y0 >= hi.y0 - 0.01f) continue;
-		return true;
-	}
-	return false;
-}
-
-// finds the nearest narrow gap between a lower and an upper block.
-// It uses only the blocks, so it does not matter where the wave is.
-static Gap findGap(float px, float half, float range, float maxGap) {
-	Gap best;
-	float minGap = half * 2.f;   // smaller than the wave: impossible
-
-	for (auto& lo : g_blocks) {
-		if (lo.x1 < px - half || lo.x0 > px + range) continue;
-
-		for (auto& hi : g_blocks) {
-			if (hi.x1 < px - half || hi.x0 > px + range) continue;
-
-			float size = hi.y0 - lo.y1;            // empty space between them
-			if (size < minGap || size > maxGap) continue;
-
-			// both blocks must exist at the same x for a few units
-			float ox0 = std::max(lo.x0, hi.x0);
-			float ox1 = std::min(lo.x1, hi.x1);
-			if (ox1 - ox0 < 2.f) continue;
-			if (ox1 < px - half) continue;
-
-			if (gapIsBlocked(lo, hi, ox0, ox1)) continue;
-
-			// take the gap that starts first
-			if (!best.ok || ox0 < best.x0) {
-				best.ok = true;
-				best.center = (hi.y0 + lo.y1) * 0.5f;
-				best.size = size;
-				best.x0 = ox0;
-				best.x1 = ox1;
-			}
+static std::vector<std::string> splitStr(const std::string& s, char d) {
+	std::vector<std::string> out;
+	size_t i = 0;
+	while (true) {
+		size_t j = s.find(d, i);
+		if (j == std::string::npos) {
+			out.push_back(s.substr(i));
+			break;
 		}
+		out.push_back(s.substr(i, j - i));
+		i = j + 1;
 	}
-	return best;
+	return out;
 }
 
-class $modify(GapPlayer, PlayerObject) {
-public:
-	struct Fields {
-		float acc = 1000.f;      // game time since the last refresh
-		bool enabled = false;
-		float approach = 80.f;
-		Gap gap;
-		bool haveLast = false;
-		bool lastHold = false;
-		float lastLogX = -1.f;
-	};
+// zones are saved as text: "x0:x1:y,x0:x1:y"
+static void loadConfig() {
+	auto mod = Mod::get();
 
-	// settings, blocks and gap are refreshed rarely, not on every step
-	void refresh() {
-		auto f = m_fields.self();
+	g_cfg.enabled = mod->getSavedValue<bool>("gs-enabled", true);
+	g_cfg.always = mod->getSavedValue<bool>("gs-always", false);
+
+	g_cfg.hold = std::max(1, std::atoi(
+		mod->getSavedValue<std::string>("gs-hold", "1").c_str()
+	));
+	g_cfg.release = std::max(1, std::atoi(
+		mod->getSavedValue<std::string>("gs-release", "1").c_str()
+	));
+	g_cfg.approach = std::max(0.f, std::strtof(
+		mod->getSavedValue<std::string>("gs-approach", "80").c_str(), nullptr
+	));
+
+	g_cfg.zones.clear();
+	for (auto& row : splitStr(mod->getSavedValue<std::string>("gs-zones", ""), ',')) {
+		auto f = splitStr(row, ':');
+		if (f.size() < 3) continue;
+		if (f[0].empty() || f[1].empty() || f[2].empty()) continue;
+
+		Zone z;
+		z.x0 = std::strtof(f[0].c_str(), nullptr);
+		z.x1 = std::strtof(f[1].c_str(), nullptr);
+		z.y = std::strtof(f[2].c_str(), nullptr);
+		g_cfg.zones.push_back(z);
+	}
+
+	g_reload = false;
+}
+
+// the settings window
+class SpamPopup : public Popup {
+protected:
+	TextInput* m_hold = nullptr;
+	TextInput* m_release = nullptr;
+	TextInput* m_approach = nullptr;
+	std::vector<std::vector<TextInput*>> m_cells;   // [row][x0, x1, y]
+
+	TextInput* makeInput(float width, const char* hint, float x, float y) {
+		auto in = TextInput::create(width, hint, "bigFont.fnt");
+		in->setFilter("0123456789.-");
+		in->setScale(0.6f);
+		m_mainLayer->addChildAtPosition(in, Anchor::Center, ccp(x, y));
+		return in;
+	}
+
+	CCLabelBMFont* makeLabel(const char* text, const char* font, float scale, float x, float y, bool left) {
+		auto l = CCLabelBMFont::create(text, font);
+		l->setScale(scale);
+		if (left) l->setAnchorPoint({ 0.f, 0.5f });
+		m_mainLayer->addChildAtPosition(l, Anchor::Center, ccp(x, y));
+		return l;
+	}
+
+	bool init() {
+		if (!Popup::init(400.f, 270.f)) return false;
+
+		this->setTitle("Gap Spam");
+
+		if (g_reload) loadConfig();
 		auto mod = Mod::get();
 
-		f->gap.ok = false;
-		f->enabled = mod->getSettingValue<bool>("gap-enabled");
-		if (!f->enabled || !m_isDart) return;
+		// ---- switches ----
+		auto en = CCMenuItemToggler::createWithStandardSprites(
+			this, menu_selector(SpamPopup::onEnable), 0.6f
+		);
+		en->toggle(g_cfg.enabled);
+		m_buttonMenu->addChildAtPosition(en, Anchor::Center, ccp(-175.f, 92.f));
+		this->makeLabel("Enable", "bigFont.fnt", 0.4f, -158.f, 92.f, true);
 
-		auto pl = PlayLayer::get();
-		if (!pl) return;
+		auto al = CCMenuItemToggler::createWithStandardSprites(
+			this, menu_selector(SpamPopup::onAlways), 0.6f
+		);
+		al->toggle(g_cfg.always);
+		m_buttonMenu->addChildAtPosition(al, Anchor::Center, ccp(-60.f, 92.f));
+		this->makeLabel("Always spam (autoclicker)", "bigFont.fnt", 0.4f, -43.f, 92.f, true);
 
-		if (mod->getSettingValue<bool>("gap-percent-on")) {
-			float pct = pl->getCurrentPercent();
-			float a = static_cast<float>(mod->getSettingValue<double>("gap-percent-from"));
-			float b = static_cast<float>(mod->getSettingValue<double>("gap-percent-to"));
-			if (pct < a || pct > b) return;
+		// ---- spam pattern ----
+		this->makeLabel("Hold steps", "bigFont.fnt", 0.35f, -185.f, 66.f, true);
+		m_hold = this->makeInput(50.f, "1", -105.f, 66.f);
+		m_hold->setString(mod->getSavedValue<std::string>("gs-hold", "1"));
+
+		this->makeLabel("Release steps", "bigFont.fnt", 0.35f, -70.f, 66.f, true);
+		m_release = this->makeInput(50.f, "1", 25.f, 66.f);
+		m_release->setString(mod->getSavedValue<std::string>("gs-release", "1"));
+
+		this->makeLabel("Approach", "bigFont.fnt", 0.35f, 70.f, 66.f, true);
+		m_approach = this->makeInput(60.f, "80", 155.f, 66.f);
+		m_approach->setString(mod->getSavedValue<std::string>("gs-approach", "80"));
+
+		// ---- zones table ----
+		const float xs[3] = { -100.f, 0.f, 100.f };
+		const char* heads[3] = { "X from", "X to", "Y (height)" };
+		for (int c = 0; c < 3; c++) {
+			this->makeLabel(heads[c], "goldFont.fnt", 0.4f, xs[c], 40.f, false);
 		}
 
-		float maxGap = static_cast<float>(mod->getSettingValue<double>("gap-max-size"));
-		float base = static_cast<float>(mod->getSettingValue<double>("gap-half"));
-		f->approach = static_cast<float>(mod->getSettingValue<double>("gap-approach"));
+		// saved zones are shown in the first rows
+		std::vector<std::vector<std::string>> saved;
+		for (auto& row : splitStr(mod->getSavedValue<std::string>("gs-zones", ""), ',')) {
+			auto f = splitStr(row, ':');
+			if (f.size() >= 3) saved.push_back(f);
+		}
 
-		float half = base * std::max(0.5f, this->getScale());
-		float range = f->approach + 300.f;
+		for (int r = 0; r < 5; r++) {
+			std::vector<TextInput*> row;
+			float y = 16.f - 21.f * static_cast<float>(r);
 
-		float px = this->getPositionX();
+			for (int c = 0; c < 3; c++) {
+				auto in = this->makeInput(90.f, c == 2 ? "y" : "x", xs[c], y);
+				if (r < static_cast<int>(saved.size())) {
+					in->setString(saved[r][c]);
+				}
+				row.push_back(in);
+			}
+			m_cells.push_back(row);
+		}
 
-		rebuildBlocks(px, range + 100.f);
-		f->gap = findGap(px, half, range, maxGap);
-
-		// debug: tell about every new gap once
-		if (f->gap.ok && std::fabs(f->gap.x0 - f->lastLogX) > 1.f) {
-			f->lastLogX = f->gap.x0;
-			log::info(
-				"Gap Spam: gap x {:.1f}..{:.1f}, center y {:.1f}, size {:.1f}, wave y {:.1f}",
-				f->gap.x0, f->gap.x1, f->gap.center, f->gap.size, this->getPositionY()
+		// ---- where the wave is right now ----
+		std::string info = "Open the pause menu next to the gap to read the wave's x and y here.";
+		auto pl = PlayLayer::get();
+		if (pl && pl->m_player1) {
+			info = fmt::format(
+				"Wave now: x {:.1f}    y {:.1f}",
+				pl->m_player1->getPositionX(), pl->m_player1->getPositionY()
 			);
 		}
+		this->makeLabel(info.c_str(), "bigFont.fnt", 0.32f, 0.f, -92.f, false);
+
+		this->makeLabel(
+			"From (X from - Approach) the wave flies to Y, then spams Hold / Release steps.",
+			"bigFont.fnt", 0.25f, 0.f, -108.f, false
+		);
+		this->makeLabel(
+			"1 / 1 = every physics step. 30 units = one block. Empty rows are ignored.",
+			"bigFont.fnt", 0.25f, 0.f, -120.f, false
+		);
+
+		return true;
+	}
+
+	void onEnable(CCObject* sender) {
+		bool on = !static_cast<CCMenuItemToggler*>(sender)->isToggled();
+		Mod::get()->setSavedValue<bool>("gs-enabled", on);
+		g_reload = true;
+	}
+
+	void onAlways(CCObject* sender) {
+		bool on = !static_cast<CCMenuItemToggler*>(sender)->isToggled();
+		Mod::get()->setSavedValue<bool>("gs-always", on);
+		g_reload = true;
+	}
+
+	void saveFromInputs() {
+		auto mod = Mod::get();
+
+		mod->setSavedValue<std::string>("gs-hold", m_hold->getString());
+		mod->setSavedValue<std::string>("gs-release", m_release->getString());
+		mod->setSavedValue<std::string>("gs-approach", m_approach->getString());
+
+		std::string out;
+		for (auto& row : m_cells) {
+			if (row[0]->getString().empty()) continue;
+			if (row[1]->getString().empty()) continue;
+			if (row[2]->getString().empty()) continue;
+
+			if (!out.empty()) out += ",";
+			out += row[0]->getString() + ":" + row[1]->getString() + ":" + row[2]->getString();
+		}
+		mod->setSavedValue<std::string>("gs-zones", out);
+
+		g_reload = true;
+	}
+
+public:
+	static SpamPopup* create() {
+		auto ret = new SpamPopup();
+		if (ret->init()) {
+			ret->autorelease();
+			return ret;
+		}
+		delete ret;
+		return nullptr;
+	}
+
+	// everything is saved when the window is closed
+	~SpamPopup() {
+		this->saveFromInputs();
+	}
+};
+
+class $modify(SpamPlayer, PlayerObject) {
+public:
+	struct Fields {
+		float lastY = 0.f;
+		bool haveLast = false;      // do we know what we pressed last?
+		bool lastHold = false;
+		bool phaseHold = false;     // spam pattern state
+		int phaseCount = 0;
+	};
+
+	// press or release, only when the state changes
+	void setHold(bool hold) {
+		auto f = m_fields.self();
+		if (f->haveLast && f->lastHold == hold) return;
+
+		if (hold) {
+			this->pushButton(static_cast<PlayerButton>(1));
+		} else {
+			this->releaseButton(static_cast<PlayerButton>(1));
+		}
+		f->lastHold = hold;
+		f->haveLast = true;
+	}
+
+	// one step of the spam: hold N steps, release M steps, repeat
+	void spamStep() {
+		auto f = m_fields.self();
+		if (f->phaseCount <= 0) {
+			f->phaseHold = !f->phaseHold;
+			f->phaseCount = f->phaseHold ? g_cfg.hold : g_cfg.release;
+		}
+		f->phaseCount--;
+		this->setHold(f->phaseHold);
 	}
 
 	void update(float dt) {
 		PlayerObject::update(dt);
 
+		if (g_reload) loadConfig();
+
 		auto f = m_fields.self();
 
-		f->acc += dt;
-		if (f->acc >= 0.02f) {
-			f->acc = 0.f;
-			this->refresh();
+		float py = this->getPositionY();
+		float stepY = std::fabs(py - f->lastY);   // how far the wave moves in one step
+		f->lastY = py;
+
+		if (!g_cfg.enabled) {
+			f->haveLast = false;
+			f->phaseCount = 0;
+			return;
 		}
 
-		if (!f->enabled || !m_isDart || !f->gap.ok) {
+		// autoclicker: spam everywhere
+		if (g_cfg.always) {
+			this->spamStep();
+			return;
+		}
+
+		// zones work for the wave
+		if (!m_isDart || g_cfg.zones.empty()) {
 			f->haveLast = false;
+			f->phaseCount = 0;
 			return;
 		}
 
 		float px = this->getPositionX();
-		float py = this->getPositionY();
 
-		// only while the wave is approaching or inside the gap
-		if (px < f->gap.x0 - f->approach || px > f->gap.x1) {
+		const Zone* zone = nullptr;
+		for (auto& z : g_cfg.zones) {
+			if (px >= z.x0 - g_cfg.approach && px <= z.x1) {
+				zone = &z;
+				break;
+			}
+		}
+		if (!zone) {
 			f->haveLast = false;
+			f->phaseCount = 0;
 			return;
 		}
 
-		// below the middle: go up, above the middle: go down
-		bool wantUp = py < f->gap.center;
-		bool hold = (wantUp == !m_isUpsideDown);
+		float err = zone->y - py;
+		float tol = std::max(0.05f, stepY * 2.5f);
 
-		if (!f->haveLast || hold != f->lastHold) {
-			if (hold) {
-				this->pushButton(static_cast<PlayerButton>(1));
-			} else {
-				this->releaseButton(static_cast<PlayerButton>(1));
-			}
-			f->lastHold = hold;
-			f->haveLast = true;
+		// at the right height: spam
+		if (std::fabs(err) <= tol) {
+			this->spamStep();
+			return;
 		}
+
+		// not there yet: fly to the height
+		f->phaseCount = 0;
+		bool wantUp = err > 0.f;
+		bool hold = (wantUp == !m_isUpsideDown);
+		this->setHold(hold);
+	}
+};
+
+class $modify(SpamPause, PauseLayer) {
+	void customSetup() {
+		PauseLayer::customSetup();
+
+		auto win = CCDirector::get()->getWinSize();
+
+		// text button (no image needed)
+		CCNode* icon = ButtonSprite::create("Spam");
+
+		// find the menu with the buttons on the right side
+		CCMenu* rightMenu = nullptr;
+		if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID("right-button-menu"))) {
+			rightMenu = byId;
+		} else if (auto kids = this->getChildren()) {
+			int best = 0;
+			for (auto obj : CCArrayExt<CCNode*>(kids)) {
+				auto menu = typeinfo_cast<CCMenu*>(obj);
+				if (!menu) continue;
+				if (menu->getPositionX() < win.width * 0.6f) continue;
+				int n = static_cast<int>(menu->getChildrenCount());
+				if (n > best) {
+					best = n;
+					rightMenu = menu;
+				}
+			}
+		}
+
+		// size like the buttons next to it
+		float size = 45.f;
+		if (rightMenu && rightMenu->getChildrenCount() > 0) {
+			if (auto first = typeinfo_cast<CCNode*>(rightMenu->getChildren()->objectAtIndex(0))) {
+				float h = first->getContentSize().height;
+				if (h > 10.f) size = h;
+			}
+		}
+		float ch = icon->getContentSize().height;
+		if (ch > 1.f) icon->setScale(std::min(1.f, size / ch));
+
+		auto btn = CCMenuItemSpriteExtra::create(
+			icon, this, menu_selector(SpamPause::onSpam)
+		);
+		btn->setID("gap-spam-button"_spr);
+
+		if (rightMenu) {
+			float x = 0.f;
+			float minY = 0.f;
+			float maxY = 0.f;
+			bool any = false;
+			if (auto kids = rightMenu->getChildren()) {
+				for (auto obj : CCArrayExt<CCNode*>(kids)) {
+					if (!obj) continue;
+					CCPoint p = obj->getPosition();
+					if (!any) {
+						x = p.x;
+						minY = p.y;
+						maxY = p.y;
+						any = true;
+					} else {
+						minY = std::min(minY, p.y);
+						maxY = std::max(maxY, p.y);
+					}
+				}
+			}
+
+			rightMenu->addChild(btn);
+
+			if (rightMenu->getLayout()) {
+				rightMenu->updateLayout();
+			} else if (any) {
+				float gap = size + 6.f;
+				CCPoint below = rightMenu->convertToWorldSpace(CCPoint(x, minY - gap));
+				if (below.y > size * 0.6f) {
+					btn->setPosition({ x, minY - gap });
+				} else {
+					btn->setPosition({ x, maxY + gap });
+				}
+			}
+		} else {
+			auto menu = CCMenu::create();
+			menu->addChild(btn);
+			menu->setPosition({ win.width - 110.f, win.height - 40.f });
+			this->addChild(menu);
+		}
+	}
+
+	void onSpam(CCObject*) {
+		if (auto p = SpamPopup::create()) p->show();
 	}
 };

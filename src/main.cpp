@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <string>
+#include <limits>
 
 using namespace geode::prelude;
 
@@ -46,7 +47,6 @@ static std::vector<std::string> splitStr(
     char delimiter
 ) {
     std::vector<std::string> result;
-
     size_t start = 0;
 
     while (true) {
@@ -142,16 +142,11 @@ static void loadConfig() {
 
 class SpamPopup : public Popup {
 protected:
-
     TextInput* m_hold = nullptr;
     TextInput* m_release = nullptr;
     TextInput* m_approach = nullptr;
 
     std::vector<std::vector<TextInput*>> m_cells;
-
-    // --------------------------------------
-    // INPUT CREATION
-    // --------------------------------------
 
     TextInput* makeInput(
         float width,
@@ -177,10 +172,6 @@ protected:
         return input;
     }
 
-    // --------------------------------------
-    // LABEL CREATION
-    // --------------------------------------
-
     CCLabelBMFont* makeLabel(
         const char* text,
         const char* font,
@@ -204,10 +195,6 @@ protected:
 
         return label;
     }
-
-    // --------------------------------------
-    // SAVE ALL SETTINGS
-    // --------------------------------------
 
     void saveFromInputs() {
         auto mod = Mod::get();
@@ -253,21 +240,12 @@ protected:
             "gs-zones", output
         );
 
-        // Immediately reload configuration
         loadConfig();
     }
-
-    // --------------------------------------
-    // SAVE BUTTON
-    // --------------------------------------
 
     void onSave(CCObject*) {
         saveFromInputs();
     }
-
-    // --------------------------------------
-    // ENABLE SWITCH
-    // --------------------------------------
 
     void onEnable(CCObject* sender) {
         bool enabled =
@@ -280,10 +258,6 @@ protected:
         g_reload = true;
     }
 
-    // --------------------------------------
-    // ALWAYS SWITCH
-    // --------------------------------------
-
     void onAlways(CCObject* sender) {
         bool enabled =
             !static_cast<CCMenuItemToggler*>(sender)->isToggled();
@@ -295,10 +269,6 @@ protected:
         g_reload = true;
     }
 
-    // --------------------------------------
-    // INITIALIZATION
-    // --------------------------------------
-
     bool init() {
         if (!Popup::init(400.f, 310.f))
             return false;
@@ -309,10 +279,6 @@ protected:
             loadConfig();
 
         auto mod = Mod::get();
-
-        // ==================================
-        // SWITCHES
-        // ==================================
 
         auto enableToggle =
             CCMenuItemToggler::createWithStandardSprites(
@@ -330,12 +296,8 @@ protected:
         );
 
         makeLabel(
-            "Enable",
-            "bigFont.fnt",
-            0.4f,
-            -158.f,
-            120.f,
-            true
+            "Enable", "bigFont.fnt",
+            0.4f, -158.f, 120.f, true
         );
 
         auto alwaysToggle =
@@ -354,17 +316,9 @@ protected:
         );
 
         makeLabel(
-            "Always spam",
-            "bigFont.fnt",
-            0.4f,
-            -43.f,
-            120.f,
-            true
+            "Always spam", "bigFont.fnt",
+            0.4f, -43.f, 120.f, true
         );
-
-        // ==================================
-        // SPAM SETTINGS
-        // ==================================
 
         std::string holdSaved =
             mod->getSavedValue<std::string>("gs-hold", "1");
@@ -376,75 +330,43 @@ protected:
             mod->getSavedValue<std::string>("gs-approach", "80");
 
         makeLabel(
-            "Hold",
-            "bigFont.fnt",
-            0.35f,
-            -185.f,
-            90.f,
-            true
+            "Hold", "bigFont.fnt",
+            0.35f, -185.f, 90.f, true
         );
 
-        m_hold = makeInput(
-            50.f, "1", -105.f, 90.f
-        );
-
+        m_hold = makeInput(50.f, "1", -105.f, 90.f);
         m_hold->setString(holdSaved);
 
         makeLabel(
-            "Release",
-            "bigFont.fnt",
-            0.35f,
-            -70.f,
-            90.f,
-            true
+            "Release", "bigFont.fnt",
+            0.35f, -70.f, 90.f, true
         );
 
-        m_release = makeInput(
-            50.f, "1", 25.f, 90.f
-        );
-
+        m_release = makeInput(50.f, "1", 25.f, 90.f);
         m_release->setString(releaseSaved);
 
         makeLabel(
-            "Approach",
-            "bigFont.fnt",
-            0.35f,
-            70.f,
-            90.f,
-            true
+            "Approach", "bigFont.fnt",
+            0.35f, 70.f, 90.f, true
         );
 
-        m_approach = makeInput(
-            60.f, "80", 155.f, 90.f
-        );
-
+        m_approach = makeInput(60.f, "80", 155.f, 90.f);
         m_approach->setString(approachSaved);
-
-        // ==================================
-        // ZONES TABLE
-        // ==================================
 
         const float xs[3] = {
             -100.f, 0.f, 100.f
         };
 
         const char* headers[3] = {
-            "X from",
-            "X to",
-            "Y height"
+            "X from", "X to", "Y height"
         };
 
         for (int c = 0; c < 3; c++) {
             makeLabel(
-                headers[c],
-                "goldFont.fnt",
-                0.4f,
-                xs[c],
-                62.f
+                headers[c], "goldFont.fnt",
+                0.4f, xs[c], 62.f
             );
         }
-
-        // Load saved zones into inputs
 
         std::vector<std::vector<std::string>> saved;
 
@@ -459,8 +381,6 @@ protected:
             if (fields.size() >= 3)
                 saved.push_back(fields);
         }
-
-        // Five editable rows
 
         for (int r = 0; r < 5; r++) {
             std::vector<TextInput*> row;
@@ -485,11 +405,8 @@ protected:
             m_cells.push_back(row);
         }
 
-        // ==================================
-        // PLAYER COORDINATES
-        // ==================================
-
-        std::string info = "PLAYER 1 | X: unavailable | Y: unavailable";
+        std::string info =
+            "PLAYER 1 | X: unavailable | Y: unavailable";
 
         auto playLayer = PlayLayer::get();
 
@@ -504,36 +421,21 @@ protected:
         }
 
         makeLabel(
-            info.c_str(),
-            "goldFont.fnt",
-            0.38f,
-            0.f,
-            -100.f
+            info.c_str(), "goldFont.fnt",
+            0.38f, 0.f, -100.f
         );
-
-        // ==================================
-        // HELP TEXT
-        // ==================================
 
         makeLabel(
             "Empty rows are ignored.",
             "bigFont.fnt",
-            0.27f,
-            0.f,
-            -119.f
+            0.27f, 0.f, -119.f
         );
 
         makeLabel(
             "30 units = 1 block | 1 / 1 = every physics step",
             "bigFont.fnt",
-            0.24f,
-            0.f,
-            -134.f
+            0.24f, 0.f, -134.f
         );
-
-        // ==================================
-        // SAVE BUTTON
-        // ==================================
 
         auto saveButton = CCMenuItemSpriteExtra::create(
             ButtonSprite::create("SAVE"),
@@ -551,7 +453,6 @@ protected:
     }
 
 public:
-
     static SpamPopup* create() {
         auto ret = new SpamPopup();
 
@@ -573,15 +474,16 @@ class $modify(SpamPlayer, PlayerObject) {
 public:
     struct Fields {
         float lastY = 0.f;
-        float correctionY = 0.f;
+        float targetY = 0.f;
         float bestY = 0.f;
-        float bestError = 999999.f;
+        float bestError = std::numeric_limits<float>::max();
 
-        bool haveLast = false;
+        bool haveLastY = false;
         bool lastHold = false;
         bool phaseHold = false;
+
         bool correcting = false;
-        bool correctionLocked = false;
+        bool targetLocked = false;
 
         int phaseCount = 0;
         int activeZone = -1;
@@ -590,16 +492,17 @@ public:
     void setHold(bool hold) {
         auto f = m_fields.self();
 
-        if (f->haveLast && f->lastHold == hold)
+        if (f->haveLastY && f->lastHold == hold)
             return;
 
-        if (hold)
+        if (hold) {
             this->pushButton(static_cast<PlayerButton>(1));
-        else
+        }
+        else {
             this->releaseButton(static_cast<PlayerButton>(1));
+        }
 
         f->lastHold = hold;
-        f->haveLast = true;
     }
 
     void spamStep() {
@@ -607,24 +510,26 @@ public:
 
         if (f->phaseCount <= 0) {
             f->phaseHold = !f->phaseHold;
+
             f->phaseCount = f->phaseHold
                 ? g_cfg.hold
                 : g_cfg.release;
         }
 
         f->phaseCount--;
-        this->setHold(f->phaseHold);
+        setHold(f->phaseHold);
     }
 
     void resetPositioning() {
         auto f = m_fields.self();
 
         f->correcting = false;
-        f->correctionLocked = false;
-        f->bestError = 999999.f;
+        f->targetLocked = false;
+        f->bestError = std::numeric_limits<float>::max();
+
         f->phaseCount = 0;
         f->activeZone = -1;
-        f->haveLast = false;
+        f->haveLastY = false;
     }
 
     void update(float dt) {
@@ -635,8 +540,8 @@ public:
 
         auto f = m_fields.self();
 
-        float py = this->getPositionY();
         float px = this->getPositionX();
+        float py = this->getPositionY();
 
         if (!g_cfg.enabled) {
             resetPositioning();
@@ -646,7 +551,8 @@ public:
         if (g_cfg.always) {
             f->activeZone = -1;
             f->correcting = false;
-            f->correctionLocked = false;
+            f->targetLocked = false;
+
             spamStep();
             return;
         }
@@ -656,13 +562,15 @@ public:
             return;
         }
 
-        // Find active zone
         int zoneIndex = -1;
 
-        for (int i = 0; i < (int)g_cfg.zones.size(); i++) {
+        for (int i = 0; i < static_cast<int>(g_cfg.zones.size()); i++) {
             auto& z = g_cfg.zones[i];
 
-            if (px >= z.x0 - g_cfg.approach && px <= z.x1) {
+            if (
+                px >= z.x0 - g_cfg.approach &&
+                px <= z.x1
+            ) {
                 zoneIndex = i;
                 break;
             }
@@ -675,66 +583,69 @@ public:
 
         auto& zone = g_cfg.zones[zoneIndex];
 
-        // New zone
+        // New zone: reset correction state
         if (f->activeZone != zoneIndex) {
             f->activeZone = zoneIndex;
+
             f->correcting = true;
-            f->correctionLocked = false;
-            f->correctionY = zone.y;
+            f->targetLocked = false;
+
+            f->targetY = zone.y;
             f->bestY = py;
             f->bestError = std::fabs(zone.y - py);
+
             f->lastY = py;
+            f->haveLastY = true;
             f->phaseCount = 0;
         }
 
-        if (!f->correcting) {
-            spamStep();
-            return;
-        }
-
-        // Initialize previous position
-        if (!f->haveLast) {
+        // Update previous position
+        if (!f->haveLastY) {
             f->lastY = py;
-            f->haveLast = true;
+            f->haveLastY = true;
         }
 
         float previousY = f->lastY;
-        float targetY = f->correctionY;
+        float previousError = f->targetY - previousY;
+        float currentError = f->targetY - py;
 
-        float previousError = targetY - previousY;
-        float currentError = targetY - py;
+        float previousDistance = std::fabs(previousError);
+        float currentDistance = std::fabs(currentError);
 
-        float currentDistance = std::fabs(zone.y - py);
-
-        // Remember the closest position to the requested Y
+        // Remember the closest observed position
         if (currentDistance < f->bestError) {
             f->bestError = currentDistance;
             f->bestY = py;
         }
 
-        // Detect crossing the target height
+        // Detect crossing the target
         bool crossed =
-            (previousError > 0.f && currentError < 0.f) ||
-            (previousError < 0.f && currentError > 0.f);
+            (previousError > 0.f && currentError <= 0.f) ||
+            (previousError < 0.f && currentError >= 0.f);
 
-        if (crossed && !f->correctionLocked) {
-            // Choose the closest of the two observed positions
-            float previousDistance = std::fabs(zone.y - previousY);
-            float currentDistance = std::fabs(zone.y - py);
-
-            f->correctionY =
+        if (f->correcting && crossed) {
+            // Select the closer side of the crossing
+            f->targetY =
                 previousDistance <= currentDistance
                 ? previousY
                 : py;
 
-            f->correctionLocked = true;
+            f->targetLocked = true;
         }
 
-        // After crossing, return to the closest observed position
-        if (f->correctionLocked) {
-            float correctionError = f->correctionY - py;
+        // Return to the closest side after crossing
+        if (f->correcting && f->targetLocked) {
+            float correctionError = f->targetY - py;
 
-            if (std::fabs(correctionError) <= 0.00001f) {
+            // Reached the selected observed position
+            // Use a fraction of the measured physics step.
+            float step = std::fabs(py - previousY);
+            float tolerance = step * 0.1f;
+
+            if (
+                step > 0.f &&
+                std::fabs(correctionError) <= tolerance
+            ) {
                 f->lastY = py;
                 f->correcting = false;
                 f->phaseCount = 0;
@@ -752,15 +663,16 @@ public:
         }
 
         // Exact target reached
-        if (std::fabs(currentError) <= 0.00001f) {
-            f->correctionY = py;
+        if (currentError == 0.f) {
             f->lastY = py;
             f->correcting = false;
+            f->phaseCount = 0;
+
             spamStep();
             return;
         }
 
-        // Continue moving towards target
+        // Continue towards target
         bool wantUp = currentError > 0.f;
         bool hold = (wantUp == !m_isUpsideDown);
 
@@ -769,157 +681,17 @@ public:
     }
 };
 
-    // --------------------------------------
-    // BUTTON CONTROL
-    // --------------------------------------
-
-    void setHold(bool hold) {
-        auto f = m_fields.self();
-
-        if (f->haveLast && f->lastHold == hold)
-            return;
-
-        if (hold) {
-            this->pushButton(
-                static_cast<PlayerButton>(1)
-            );
-        }
-        else {
-            this->releaseButton(
-                static_cast<PlayerButton>(1)
-            );
-        }
-
-        f->lastHold = hold;
-        f->haveLast = true;
-    }
-
-    // --------------------------------------
-    // SPAM PATTERN
-    // --------------------------------------
-
-    void spamStep() {
-        auto f = m_fields.self();
-
-        if (f->phaseCount <= 0) {
-            f->phaseHold = !f->phaseHold;
-
-            f->phaseCount = f->phaseHold
-                ? g_cfg.hold
-                : g_cfg.release;
-        }
-
-        f->phaseCount--;
-
-        this->setHold(f->phaseHold);
-    }
-
-    // --------------------------------------
-    // UPDATE
-    // --------------------------------------
-
-    void update(float dt) {
-        PlayerObject::update(dt);
-
-        if (g_reload)
-            loadConfig();
-
-        auto f = m_fields.self();
-
-        float py = this->getPositionY();
-
-        float stepY = std::fabs(
-            py - f->lastY
-        );
-
-        f->lastY = py;
-
-        // Disabled
-
-        if (!g_cfg.enabled) {
-            f->haveLast = false;
-            f->phaseCount = 0;
-            return;
-        }
-
-        // Autoclicker
-
-        if (g_cfg.always) {
-            this->spamStep();
-            return;
-        }
-
-        // Only wave
-
-        if (!m_isDart || g_cfg.zones.empty()) {
-            f->haveLast = false;
-            f->phaseCount = 0;
-            return;
-        }
-
-        float px = this->getPositionX();
-
-        const Zone* zone = nullptr;
-
-        for (auto& z : g_cfg.zones) {
-            if (
-                px >= z.x0 - g_cfg.approach &&
-                px <= z.x1
-            ) {
-                zone = &z;
-                break;
-            }
-        }
-
-        if (!zone) {
-            f->haveLast = false;
-            f->phaseCount = 0;
-            return;
-        }
-
-        float error = zone->y - py;
-
-        float tolerance = std::max(
-            0.05f,
-            stepY * 2.5f
-        );
-
-        // Reached target height
-
-        if (std::fabs(error) <= tolerance) {
-            this->spamStep();
-            return;
-        }
-
-        // Fly towards target height
-
-        f->phaseCount = 0;
-
-        bool wantUp = error > 0.f;
-
-        bool hold = (
-            wantUp == !m_isUpsideDown
-        );
-
-        this->setHold(hold);
-    }
-};
-
 // ==========================================
 // PAUSE MENU
 // ==========================================
 
 class $modify(SpamPause, PauseLayer) {
-
     void customSetup() {
         PauseLayer::customSetup();
 
         auto win = CCDirector::get()->getWinSize();
 
-        // Independent button
-
         auto icon = ButtonSprite::create("Spam");
-
         icon->setScale(0.75f);
 
         auto button = CCMenuItemSpriteExtra::create(
@@ -930,15 +702,10 @@ class $modify(SpamPause, PauseLayer) {
 
         button->setID("gap-spam-button"_spr);
 
-        // Separate menu:
-        // Does not modify original pause buttons.
-
         auto menu = CCMenu::create();
-
         menu->setID("gap-spam-menu"_spr);
 
         menu->addChild(button);
-
         button->setPosition({0.f, 0.f});
 
         menu->setPosition({

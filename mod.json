@@ -6,63 +6,9 @@
 		"mac": "2.2081",
 		"ios": "2.2081"
 	},
-	"version": "v1.0.0",
+	"version": "v2.0.0",
 	"id": "fullydraco.gapspam",
 	"name": "Gap Spam",
 	"developer": "fullydraco",
-	"description": "Flies the wave into a narrow gap between two blocks and spams through it. For botting gap levels.",
-	"settings": {
-		"gap-enabled": {
-			"type": "bool",
-			"name": "Enable",
-			"description": "Turn the gap assist on or off.",
-			"default": true
-		},
-		"gap-max-size": {
-			"type": "float",
-			"name": "Max gap size",
-			"description": "Gaps larger than this (in units) are ignored. The wave's block hitbox is about 10 units.",
-			"default": 30,
-			"min": 10,
-			"max": 200
-		},
-		"gap-half": {
-			"type": "float",
-			"name": "Wave hitbox half size",
-			"description": "Half of the wave's block hitbox in units (5 = a 10x10 hitbox). Scaled automatically for mini wave.",
-			"default": 5,
-			"min": 1,
-			"max": 20
-		},
-		"gap-approach": {
-			"type": "float",
-			"name": "Approach distance",
-			"description": "How many units before the gap the mod starts steering the wave to its center.",
-			"default": 80,
-			"min": 0,
-			"max": 500
-		},
-		"gap-percent-on": {
-			"type": "bool",
-			"name": "Only in a percent range",
-			"description": "Work only between the two percents below. Use it to show the mod where the gap section is.",
-			"default": false
-		},
-		"gap-percent-from": {
-			"type": "float",
-			"name": "From %",
-			"description": "Start of the range.",
-			"default": 0,
-			"min": 0,
-			"max": 100
-		},
-		"gap-percent-to": {
-			"type": "float",
-			"name": "To %",
-			"description": "End of the range.",
-			"default": 100,
-			"min": 0,
-			"max": 100
-		}
-	}
+	"description": "Type the coordinates where the wave should spam: it flies there and spams (hold/release steps). Everything is set from the pause menu."
 }

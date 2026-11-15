@@ -2,67 +2,63 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/EditorUI.hpp>
 
+#include <string>
 #include <sstream>
 #include <iomanip>
-#include <string>
+#include <algorithm>
 
 using namespace geode::prelude;
 
-class $modify(PrecisionEditorUI, EditorUI) {
-    CCLabelBMFont* m_precisionLabel = nullptr;
+class $modify(ExtendedPrecision, EditorUI) {
 
-    bool init(LevelEditorLayer* layer) {
-        if (!EditorUI::init(layer))
-            return false;
+    void updateObjectInfoLabel() {
+        // Обновляем стандартную информацию GD
+        EditorUI::updateObjectInfoLabel();
 
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
-
-        m_precisionLabel = CCLabelBMFont::create(
-            "Position: (0, 0)",
-            "bigFont.fnt"
-        );
-
-        if (m_precisionLabel) {
-            m_precisionLabel->setAnchorPoint({0.f, 1.f});
-            m_precisionLabel->setPosition({
-                12.f,
-                winSize.height - 125.f
-            });
-            m_precisionLabel->setScale(0.42f);
-            m_precisionLabel->setColor({255, 255, 255});
-            m_precisionLabel->setZOrder(9999);
-
-            this->addChild(m_precisionLabel);
-        }
-
-        this->schedule(
-            schedule_selector(
-                PrecisionEditorUI::updatePrecisionInfo
-            ),
-            0.05f
-        );
-
-        return true;
-    }
-
-    void updatePrecisionInfo(float dt) {
-        if (!m_precisionLabel)
+        if (!m_objectInfoLabel || !m_selectedObject)
             return;
 
-        if (!m_selectedObject) {
-            m_precisionLabel->setString("Position: (no object)");
-            return;
-        }
+        // Читаем количество знаков после запятой
+        int digits = Mod::get()->getSettingValue<int>(
+            "decimal-places"
+        );
 
+        digits = std::clamp(digits, 0, 100);
+
+        // Получаем реальные координаты объекта
         auto pos = m_selectedObject->getPosition();
 
-        std::ostringstream stream;
+        std::ostringstream coords;
 
-        stream << std::fixed << std::setprecision(17)
-               << "Position: ("
+        coords << std::fixed
+               << std::setprecision(digits)
                << pos.x << ", "
-               << pos.y << ")";
+               << pos.y;
 
-        m_precisionLabel->setString(stream.str().c_str());
+        // Получаем стандартный текст информации
+        std::string info = m_objectInfoLabel->getString();
+
+        // Ищем строку Position
+        const std::string marker = "Position: (";
+        auto start = info.find(marker);
+
+        if (start == std::string::npos)
+            return;
+
+        start += marker.length();
+
+        auto end = info.find(')', start);
+
+        if (end == std::string::npos)
+            return;
+
+        // Заменяем только координаты
+        info.replace(
+            start,
+            end - start,
+            coords.str()
+        );
+
+        m_objectInfoLabel->setString(info.c_str());
     }
 };

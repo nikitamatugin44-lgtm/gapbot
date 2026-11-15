@@ -5,353 +5,65 @@
 #include <Geode/ui/TextInput.hpp>
 
 #include <string>
-#include <unordered_map>
-#include <algorithm>
+#include <cstdlib>
 #include <cmath>
-#include <cstdint>
-#include <limits>
 
 using namespace geode::prelude;
 
-// ==========================================
-// EXTENDED PRECISION
-// ==========================================
-
-// Decimal arbitrary precision storage.
-// Values are stored as strings to avoid float rounding.
-
-struct Decimal {
-    bool negative = false;
-    std::string digits = "0";
-    int64_t scale = 0;
-};
-
-struct ExactPosition {
-    Decimal x;
-    Decimal y;
-};
-
-struct PrecisionConfig {
-    bool enabled = true;
-    std::string movementStep =
-        "0.000000000000000000000001";
-};
-
-static PrecisionConfig g_config;
-
-static std::unordered_map<
-    GameObject*,
-    ExactPosition
-> g_positions;
-
-// ==========================================
-// DECIMAL HELPERS
-// ==========================================
-
-static std::string normalize(std::string value) {
-    size_t first = value.find_first_not_of('0');
-
-    if (first == std::string::npos)
-        return "0";
-
-    return value.substr(first);
-}
-
-static Decimal parseDecimal(const std::string& input) {
-    Decimal result;
-
-    if (input.empty())
-        return result;
-
-    size_t pos = 0;
-
-    if (input[pos] == '-') {
-        result.negative = true;
-        pos++;
-    }
-    else if (input[pos] == '+') {
-        pos++;
-    }
-
-    bool fractional = false;
-
-    for (; pos < input.size(); pos++) {
-        char c = input[pos];
-
-        if (c == '.') {
-            if (fractional)
-                return Decimal{};
-
-            fractional = true;
-            continue;
-        }
-
-        if (c < '0' || c > '9')
-            return Decimal{};
-
-        result.digits += c;
-
-        if (fractional)
-            result.scale++;
-    }
-
-    // Remove leading zeroes.
-    result.digits = normalize(result.digits);
-
-    // Remove unnecessary trailing decimal zeroes.
-    while (
-        result.scale > 0 &&
-        result.digits.size() > 1 &&
-        result.digits.back() == '0'
-    ) {
-        result.digits.pop_back();
-        result.scale--;
-    }
-
-    if (result.digits == "0")
-        result.negative = false;
-
-    return result;
-}
-
-static std::string decimalToString(const Decimal& value) {
-    std::string digits = value.digits;
-
-    if (value.scale > 0) {
-        if (digits.size() <= value.scale) {
-            digits.insert(
-                0,
-                value.scale - digits.size() + 1,
-                '0'
-            );
-        }
-
-        digits.insert(
-            digits.size() - value.scale,
-            "."
-        );
-    }
-
-    if (value.negative && digits != "0")
-        digits.insert(0, "-");
-
-    return digits;
-}
-
-// ==========================================
-// DECIMAL ADDITION
-// ==========================================
-
-static std::string addUnsigned(
-    std::string a,
-    std::string b
-) {
-    std::reverse(a.begin(), a.end());
-    std::reverse(b.begin(), b.end());
-
-    std::string result;
-
-    int carry = 0;
-    size_t length = std::max(a.size(), b.size());
-
-    for (size_t i = 0; i < length; i++) {
-        int x = i < a.size() ? a[i] - '0' : 0;
-        int y = i < b.size() ? b[i] - '0' : 0;
-
-        int sum = x + y + carry;
-
-        result += char('0' + sum % 10);
-        carry = sum / 10;
-    }
-
-    if (carry)
-        result += char('0' + carry);
-
-    std::reverse(result.begin(), result.end());
-
-    return normalize(result);
-}
-
-static int compareUnsigned(
-    const std::string& a,
-    const std::string& b
-) {
-    if (a.size() != b.size())
-        return a.size() > b.size() ? 1 : -1;
-
-    if (a == b)
-        return 0;
-
-    return a > b ? 1 : -1;
-}
-
-static std::string subtractUnsigned(
-    std::string a,
-    std::string b
-) {
-    std::reverse(a.begin(), a.end());
-    std::reverse(b.begin(), b.end());
-
-    std::string result;
-
-    int borrow = 0;
-
-    for (size_t i = 0; i < a.size(); i++) {
-        int x = a[i] - '0' - borrow;
-        int y = i < b.size() ? b[i] - '0' : 0;
-
-        borrow = 0;
-
-        if (x < y) {
-            x += 10;
-            borrow = 1;
-        }
-
-        result += char('0' + x - y);
-    }
-
-    std::reverse(result.begin(), result.end());
-
-    return normalize(result);
-}
-
-static Decimal addDecimal(
-    Decimal a,
-    Decimal b
-) {
-    int64_t scale = std::max(a.scale, b.scale);
-
-    a.digits.append(scale - a.scale, '0');
-    b.digits.append(scale - b.scale, '0');
-
-    Decimal result;
-    result.scale = scale;
-
-    if (a.negative == b.negative) {
-        result.digits = addUnsigned(
-            a.digits,
-            b.digits
-        );
-
-        result.negative = a.negative;
-    }
-    else {
-        int cmp = compareUnsigned(
-            a.digits,
-            b.digits
-        );
-
-        if (cmp == 0)
-            return Decimal{};
-
-        if (cmp > 0) {
-            result.digits = subtractUnsigned(
-                a.digits,
-                b.digits
-            );
-
-            result.negative = a.negative;
-        }
-        else {
-            result.digits = subtractUnsigned(
-                b.digits,
-                a.digits
-            );
-
-            result.negative = b.negative;
-        }
-    }
-
-    result.digits = normalize(result.digits);
-
-    return result;
-}
-
-// ==========================================
-// EXACT POSITION STORAGE
-// ==========================================
-
-static ExactPosition& getPosition(GameObject* object) {
-    return g_positions[object];
-}
-
-static void applyExactStep(
-    GameObject* object,
-    bool horizontal,
-    bool positive
-) {
-    if (!object)
-        return;
-
-    auto& position = getPosition(object);
-
-    std::string step = g_config.movementStep;
-
-    Decimal delta = parseDecimal(step);
-
-    if (!positive)
-        delta.negative = !delta.negative;
-
-    if (horizontal)
-        position.x = addDecimal(position.x, delta);
-    else
-        position.y = addDecimal(position.y, delta);
-}
-
-// ==========================================
-// SETTINGS
-// ==========================================
+static bool g_enabled = true;
+static std::string g_step = "0.000001";
 
 class PrecisionPopup : public Popup {
-protected:
-    TextInput* m_step = nullptr;
+    TextInput* m_input = nullptr;
 
     void onSave(CCObject*) {
-        std::string value = m_step->getString();
+        auto value = m_input->getString();
 
-        Decimal parsed = parseDecimal(value);
+        std::string s = value;
+        if (s.empty()) return;
 
-        g_config.movementStep =
-            decimalToString(parsed);
+        char* end = nullptr;
+        float parsed = std::strtof(s.c_str(), &end);
 
+        if (end == s.c_str() || *end != '\0' ||
+            !std::isfinite(parsed) || parsed <= 0.f) {
+            FLAlertLayer::create(
+                "Extended Precision",
+                "Invalid movement step.",
+                "OK"
+            )->show();
+            return;
+        }
+
+        g_step = s;
         Mod::get()->setSavedValue<std::string>(
-            "movement-step",
-            g_config.movementStep
+            "movement-step", g_step
         );
+        onClose(nullptr);
     }
 
-    bool init() {
-        if (!Popup::init(320.f, 180.f))
+    bool setup() {
+        if (!Popup::init(300.f, 160.f))
             return false;
 
         setTitle("Extended Precision");
 
         auto label = CCLabelBMFont::create(
-            "Movement Step",
-            "bigFont.fnt"
+            "Movement Step", "bigFont.fnt"
+        );
+        label->setScale(0.55f);
+        m_mainLayer->addChildAtPosition(
+            label, Anchor::Center, ccp(0, 38)
         );
 
-        label->setScale(0.5f);
+        m_input = TextInput::create(
+            250.f, "Enter step", "bigFont.fnt"
+        );
+        m_input->setFilter("0123456789.-");
+        m_input->setString(g_step);
 
         m_mainLayer->addChildAtPosition(
-            label,
-            Anchor::Center,
-            ccp(0.f, 55.f)
-        );
-
-        m_step = TextInput::create(
-            270.f,
-            "Movement Step",
-            "bigFont.fnt"
-        );
-
-        m_step->setFilter("0123456789.-");
-        m_step->setString(g_config.movementStep);
-
-        m_mainLayer->addChildAtPosition(
-            m_step,
-            Anchor::Center,
-            ccp(0.f, 15.f)
+            m_input, Anchor::Center, ccp(0, 0)
         );
 
         auto save = CCMenuItemSpriteExtra::create(
@@ -361,9 +73,7 @@ protected:
         );
 
         m_buttonMenu->addChildAtPosition(
-            save,
-            Anchor::Center,
-            ccp(0.f, -55.f)
+            save, Anchor::Center, ccp(0, -48)
         );
 
         return true;
@@ -372,39 +82,106 @@ protected:
 public:
     static PrecisionPopup* create() {
         auto ret = new PrecisionPopup();
-
-        if (ret->init()) {
+        if (ret && ret->setup()) {
             ret->autorelease();
             return ret;
         }
-
-        delete ret;
+        CC_SAFE_DELETE(ret);
         return nullptr;
     }
 };
-
-// ==========================================
-// EDITOR HOOK
-// ==========================================
 
 class $modify(PrecisionEditorUI, EditorUI) {
     bool init(LevelEditorLayer* layer) {
         if (!EditorUI::init(layer))
             return false;
 
-        g_config.enabled =
+        g_enabled =
             Mod::get()->getSettingValue<bool>("enabled");
 
-        g_config.movementStep =
-            Mod::get()->getSavedValue<std::string>(
-                "movement-step",
-                "0.000000000000000000000001"
-            );
+        g_step = Mod::get()->getSavedValue<std::string>(
+            "movement-step",
+            "0.000001"
+        );
 
         return true;
     }
 
+    void setupEditMenu() {
+        EditorUI::setupEditMenu();
+
+        if (!m_editButtonBar)
+            return;
+
+        if (m_editButtonBar->getChildByTag(987654))
+            return;
+
+        auto menu = CCMenu::create();
+        menu->setPosition(CCPointZero);
+        menu->setTag(987654);
+
+        auto button = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("EP", 30, true, "bigFont.fnt", "GJ_button_04.png", 30.f, 0.7f),
+            this,
+            menu_selector(PrecisionEditorUI::onPrecision)
+        );
+
+        menu->addChild(button);
+
+        auto size = m_editButtonBar->getContentSize();
+        button->setPosition(
+            ccp(size.width - 25.f, size.height - 25.f)
+        );
+
+        m_editButtonBar->addChild(menu, 999);
+    }
+
+    void onPrecision(CCObject*) {
+        auto popup = PrecisionPopup::create();
+        if (popup)
+            popup->show();
+    }
+
     void moveObjectCall(EditCommand command) {
-        EditorUI::moveObjectCall(command);
+        if (!g_enabled) {
+            EditorUI::moveObjectCall(command);
+            return;
+        }
+
+        char* end = nullptr;
+        float step = std::strtof(g_step.c_str(), &end);
+
+        if (end == g_step.c_str() || *end != '\0' ||
+            !std::isfinite(step) || step <= 0.f) {
+            EditorUI::moveObjectCall(command);
+            return;
+        }
+
+        auto originalOffset = this->moveForCommand(command);
+
+        if (originalOffset == CCPointZero) {
+            EditorUI::moveObjectCall(command);
+            return;
+        }
+
+        CCPoint offset(
+            originalOffset.x == 0.f
+                ? 0.f
+                : std::copysign(step, originalOffset.x),
+            originalOffset.y == 0.f
+                ? 0.f
+                : std::copysign(step, originalOffset.y)
+        );
+
+        if (!m_selectedObjects || m_selectedObjects->count() == 0) {
+            EditorUI::moveObjectCall(command);
+            return;
+        }
+
+        CCARRAY_FOREACH(m_selectedObjects, node) {
+            auto object = static_cast<GameObject*>(node);
+            if (object)
+                this->moveObject(object, offset);
+        }
     }
 };

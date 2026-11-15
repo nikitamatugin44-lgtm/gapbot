@@ -3,42 +3,33 @@
 #include <Geode/modify/EditorUI.hpp>
 
 #include <string>
-#include <sstream>
-#include <iomanip>
-#include <algorithm>
 
 using namespace geode::prelude;
 
-class $modify(ExtendedPrecision, EditorUI) {
+class $modify(FakePositionEditor, EditorUI) {
 
     void updateObjectInfoLabel() {
-        // Обновляем стандартную информацию GD
+        // Сначала обновляем оригинальную информацию GD
         EditorUI::updateObjectInfoLabel();
 
         if (!m_objectInfoLabel || !m_selectedObject)
             return;
 
-        // Читаем количество знаков после запятой
-        int digits = Mod::get()->getSettingValue<int>(
-            "decimal-places"
+        bool enabled = Mod::get()->getSettingValue<bool>(
+            "fake-enabled"
         );
 
-        digits = std::clamp(digits, 0, 100);
+        if (!enabled)
+            return;
 
-        // Получаем реальные координаты объекта
-        auto pos = m_selectedObject->getPosition();
+        std::string fakeX =
+            Mod::get()->getSettingValue<std::string>("fake-x");
 
-        std::ostringstream coords;
+        std::string fakeY =
+            Mod::get()->getSettingValue<std::string>("fake-y");
 
-        coords << std::fixed
-               << std::setprecision(digits)
-               << pos.x << ", "
-               << pos.y;
-
-        // Получаем стандартный текст информации
         std::string info = m_objectInfoLabel->getString();
 
-        // Ищем строку Position
         const std::string marker = "Position: (";
         auto start = info.find(marker);
 
@@ -52,11 +43,12 @@ class $modify(ExtendedPrecision, EditorUI) {
         if (end == std::string::npos)
             return;
 
-        // Заменяем только координаты
+        std::string fakePosition = fakeX + ", " + fakeY;
+
         info.replace(
             start,
             end - start,
-            coords.str()
+            fakePosition
         );
 
         m_objectInfoLabel->setString(info.c_str());

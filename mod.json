@@ -7,19 +7,29 @@
         "mac": "2.2081",
         "ios": "2.2081"
     },
-    "version": "v1.0.0",
+    "version": "v1.1.0",
     "id": "fullydraco.extendedprecision",
     "name": "Extended Precision",
     "developer": "fullydraco",
-    "description": "Displays object coordinates with a customizable number of decimal places in the Geometry Dash editor.",
+    "description": "Display custom fake object coordinates in the editor.",
     "settings": {
-        "decimal-places": {
-            "name": "Decimal Places",
-            "description": "Number of decimal places displayed in object coordinates.",
-            "type": "int",
-            "default": 6,
-            "min": 0,
-            "max": 100
+        "fake-enabled": {
+            "name": "Enable Fake Position",
+            "description": "Display custom coordinates instead of real coordinates.",
+            "type": "bool",
+            "default": true
+        },
+        "fake-x": {
+            "name": "Fake X",
+            "description": "Custom displayed X coordinate.",
+            "type": "string",
+            "default": "1000000.123456789"
+        },
+        "fake-y": {
+            "name": "Fake Y",
+            "description": "Custom displayed Y coordinate.",
+            "type": "string",
+            "default": "-500000.987654321"
         }
     }
 }

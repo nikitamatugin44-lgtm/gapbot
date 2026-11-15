@@ -2,34 +2,11 @@
 {
     "geode": "5.11.1",
     "gd": {
-        "win": "2.2081",
-        "android": "2.2081",
-        "mac": "2.2081",
-        "ios": "2.2081"
+        "android": "2.2081"
     },
-    "version": "v1.1.0",
-    "id": "fullydraco.extendedprecision",
-    "name": "Extended Precision",
+    "version": "v1.0.0",
+    "id": "fullydraco.optimizedtps",
+    "name": "Optimized TPS",
     "developer": "fullydraco",
-    "description": "Display custom fake object coordinates in the editor.",
-    "settings": {
-        "fake-enabled": {
-            "name": "Enable Fake Position",
-            "description": "Display custom coordinates instead of real coordinates.",
-            "type": "bool",
-            "default": true
-        },
-        "fake-x": {
-            "name": "Fake X",
-            "description": "Custom displayed X coordinate.",
-            "type": "string",
-            "default": "1000000.123456789"
-        },
-        "fake-y": {
-            "name": "Fake Y",
-            "description": "Custom displayed Y coordinate.",
-            "type": "string",
-            "default": "-500000.987654321"
-        }
-    }
+    "description": "Physics update performance profiler and optimization project."
 }

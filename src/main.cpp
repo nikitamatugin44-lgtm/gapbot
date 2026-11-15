@@ -1,56 +1,62 @@
 
 #include <Geode/Geode.hpp>
-#include <Geode/modify/EditorUI.hpp>
+#include <Geode/modify/GJBaseGameLayer.hpp>
 
-#include <string>
+#include <chrono>
+#include <cstdint>
 
 using namespace geode::prelude;
 
-class $modify(FakePositionEditor, EditorUI) {
+class $modify(TPSProfiler, GJBaseGameLayer) {
 
-    void updateObjectInfoLabel() {
-        // Сначала обновляем оригинальную информацию GD
-        EditorUI::updateObjectInfoLabel();
+    void update(float dt) {
+        using Clock = std::chrono::steady_clock;
 
-        if (!m_objectInfoLabel || !m_selectedObject)
-            return;
+        static auto lastReport = Clock::now();
+        static uint64_t updateCount = 0;
+        static uint64_t totalTimeNs = 0;
+        static uint64_t maxTimeNs = 0;
 
-        bool enabled = Mod::get()->getSettingValue<bool>(
-            "fake-enabled"
-        );
+        auto start = Clock::now();
 
-        if (!enabled)
-            return;
+        GJBaseGameLayer::update(dt);
 
-        std::string fakeX =
-            Mod::get()->getSettingValue<std::string>("fake-x");
+        auto end = Clock::now();
 
-        std::string fakeY =
-            Mod::get()->getSettingValue<std::string>("fake-y");
+        auto elapsed = std::chrono::duration_cast<
+            std::chrono::nanoseconds
+        >(end - start).count();
 
-        std::string info = m_objectInfoLabel->getString();
+        updateCount++;
+        totalTimeNs += elapsed;
 
-        const std::string marker = "Position: (";
-        auto start = info.find(marker);
+        if (static_cast<uint64_t>(elapsed) > maxTimeNs)
+            maxTimeNs = elapsed;
 
-        if (start == std::string::npos)
-            return;
+        auto period = std::chrono::duration_cast<
+            std::chrono::milliseconds
+        >(end - lastReport).count();
 
-        start += marker.length();
+        if (period >= 1000) {
+            double seconds = period / 1000.0;
+            double callsPerSecond = updateCount / seconds;
+            double averageUs = updateCount
+                ? (totalTimeNs / 1000.0) / updateCount
+                : 0.0;
 
-        auto end = info.find(')', start);
+            log::info(
+                "[TPS Profiler] Updates/sec: {:.1f} | "
+                "Average update: {:.2f} us | "
+                "Max update: {:.2f} us",
+                callsPerSecond,
+                averageUs,
+                maxTimeNs / 1000.0
+            );
 
-        if (end == std::string::npos)
-            return;
-
-        std::string fakePosition = fakeX + ", " + fakeY;
-
-        info.replace(
-            start,
-            end - start,
-            fakePosition
-        );
-
-        m_objectInfoLabel->setString(info.c_str());
+            updateCount = 0;
+            totalTimeNs = 0;
+            maxTimeNs = 0;
+            lastReport = end;
+        }
     }
 };

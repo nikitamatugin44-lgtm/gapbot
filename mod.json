@@ -1,14 +1,25 @@
+
 {
-	"geode": "5.11.1",
-	"gd": {
-		"win": "2.2081",
-		"android": "2.2081",
-		"mac": "2.2081",
-		"ios": "2.2081"
-	},
-	"version": "v2.0.0",
-	"id": "fullydraco.gapspam",
-	"name": "Gap Spam",
-	"developer": "fullydraco",
-	"description": "Type the coordinates where the wave should spam: it flies there and spams (hold/release steps). Everything is set from the pause menu."
+    "geode": "5.11.1",
+    "gd": {
+        "win": "2.2081",
+        "android": "2.2081",
+        "mac": "2.2081",
+        "ios": "2.2081"
+    },
+    "version": "v1.0.0",
+    "id": "fullydraco.extendedprecision",
+    "name": "Extended Precision",
+    "developer": "fullydraco",
+    "description": "Displays object coordinates with a customizable number of decimal places in the Geometry Dash editor.",
+    "settings": {
+        "decimal-places": {
+            "name": "Decimal Places",
+            "description": "Number of decimal places displayed in object coordinates.",
+            "type": "int",
+            "default": 6,
+            "min": 0,
+            "max": 100
+        }
+    }
 }

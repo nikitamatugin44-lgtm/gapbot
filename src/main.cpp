@@ -1,62 +1,86 @@
-
 #include <Geode/Geode.hpp>
-#include <Geode/modify/GJBaseGameLayer.hpp>
+#include <Geode/modify/EditorUI.hpp>
 
-#include <chrono>
-#include <cstdint>
+#include <string>
+#include <sstream>
+#include <iomanip>
+#include <algorithm>
 
 using namespace geode::prelude;
 
-class $modify(TPSProfiler, GJBaseGameLayer) {
+static void replaceAll(
+    std::string& text,
+    const std::string& from,
+    const std::string& to
+) {
+    if (from.empty())
+        return;
 
-    void update(float dt) {
-        using Clock = std::chrono::steady_clock;
+    size_t pos = 0;
 
-        static auto lastReport = Clock::now();
-        static uint64_t updateCount = 0;
-        static uint64_t totalTimeNs = 0;
-        static uint64_t maxTimeNs = 0;
+    while ((pos = text.find(from, pos)) != std::string::npos) {
+        text.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+}
 
-        auto start = Clock::now();
+static std::string formatNumber(double value, int digits) {
+    std::ostringstream stream;
 
-        GJBaseGameLayer::update(dt);
+    stream << std::fixed
+           << std::setprecision(digits)
+           << value;
 
-        auto end = Clock::now();
+    return stream.str();
+}
 
-        auto elapsed = std::chrono::duration_cast<
-            std::chrono::nanoseconds
-        >(end - start).count();
+class $modify(ExtendedPrecision, EditorUI) {
 
-        updateCount++;
-        totalTimeNs += elapsed;
+    void updateObjectInfoLabel() {
+        EditorUI::updateObjectInfoLabel();
 
-        if (static_cast<uint64_t>(elapsed) > maxTimeNs)
-            maxTimeNs = elapsed;
+        if (!m_objectInfoLabel || !m_selectedObject)
+            return;
 
-        auto period = std::chrono::duration_cast<
-            std::chrono::milliseconds
-        >(end - lastReport).count();
+        int digits = Mod::get()->getSettingValue<int>(
+            "decimal-places"
+        );
 
-        if (period >= 1000) {
-            double seconds = period / 1000.0;
-            double callsPerSecond = updateCount / seconds;
-            double averageUs = updateCount
-                ? (totalTimeNs / 1000.0) / updateCount
-                : 0.0;
+        digits = std::clamp(digits, 0, 100);
 
-            log::info(
-                "[TPS Profiler] Updates/sec: {:.1f} | "
-                "Average update: {:.2f} us | "
-                "Max update: {:.2f} us",
-                callsPerSecond,
-                averageUs,
-                maxTimeNs / 1000.0
+        std::string format =
+            Mod::get()->getSettingValue<std::string>(
+                "position-format"
             );
 
-            updateCount = 0;
-            totalTimeNs = 0;
-            maxTimeNs = 0;
-            lastReport = end;
-        }
+        auto pos = m_selectedObject->getPosition();
+
+        std::string x = formatNumber(pos.x, digits);
+        std::string y = formatNumber(pos.y, digits);
+
+        replaceAll(format, "{x}", x);
+        replaceAll(format, "{y}", y);
+
+        std::string info = m_objectInfoLabel->getString();
+
+        const std::string marker = "Position: (";
+
+        auto start = info.find(marker);
+
+        if (start == std::string::npos)
+            return;
+
+        auto end = info.find(')', start);
+
+        if (end == std::string::npos)
+            return;
+
+        info.replace(
+            start,
+            end - start + 1,
+            format
+        );
+
+        m_objectInfoLabel->setString(info.c_str());
     }
 };

@@ -4,136 +4,142 @@
 
 using namespace geode::prelude;
 
+class ExtendedPrecisionPopup : public geode::Popup {
+protected:
+    CCMenu* m_headerMenu = nullptr;
+    CCNode* m_window = nullptr;
+    CCLabelBMFont* m_positionLabel = nullptr;
+
+    bool init() {
+        if (!Popup::init(300.f, 230.f))
+            return false;
+
+        this->setTitle("EXTENDED PRECISION");
+
+        auto winSize = CCDirector::sharedDirector()->getWinSize();
+
+        m_window = this;
+
+        auto panel = CCScale9Sprite::create(
+            "square02_001.png"
+        );
+
+        panel->setContentSize({280.f, 205.f});
+        panel->setColor({25, 30, 43});
+        panel->setPosition({150.f, 105.f});
+        this->addChild(panel, -1);
+
+        auto header = CCScale9Sprite::create(
+            "square02_001.png"
+        );
+
+        header->setContentSize({280.f, 34.f});
+        header->setColor({45, 65, 100});
+        header->setPosition({150.f, 190.f});
+        this->addChild(header);
+
+        auto headerLabel = CCLabelBMFont::create(
+            "EXTENDED PRECISION",
+            "bigFont.fnt"
+        );
+
+        headerLabel->setScale(0.42f);
+        headerLabel->setPosition({140.f, 190.f});
+        this->addChild(headerLabel, 2);
+
+        auto close = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("X"),
+            this,
+            menu_selector(ExtendedPrecisionPopup::onCloseWindow)
+        );
+
+        auto closeMenu = CCMenu::create();
+        closeMenu->addChild(close);
+        closeMenu->setPosition({275.f, 190.f});
+        this->addChild(closeMenu, 5);
+
+        auto diagnostics = CCLabelBMFont::create(
+            "DIAGNOSTICS: READY",
+            "bigFont.fnt"
+        );
+
+        diagnostics->setScale(0.45f);
+        diagnostics->setPosition({150.f, 155.f});
+        this->addChild(diagnostics);
+
+        m_positionLabel = CCLabelBMFont::create(
+            "X: ---\nY: ---",
+            "bigFont.fnt"
+        );
+
+        m_positionLabel->setScale(0.55f);
+        m_positionLabel->setAlignment(kCCTextAlignmentLeft);
+        m_positionLabel->setPosition({75.f, 115.f});
+        this->addChild(m_positionLabel);
+
+        auto info = CCLabelBMFont::create(
+            "DOUBLE PRECISION ENGINE",
+            "bigFont.fnt"
+        );
+
+        info->setScale(0.4f);
+        info->setPosition({150.f, 65.f});
+        this->addChild(info);
+
+        auto status = CCLabelBMFont::create(
+            "ACCUMULATOR: DISABLED",
+            "bigFont.fnt"
+        );
+
+        status->setScale(0.4f);
+        status->setColor({120, 220, 140});
+        status->setPosition({150.f, 40.f});
+        this->addChild(status);
+
+        return true;
+    }
+
+    void onCloseWindow(CCObject*) {
+        this->onClose(nullptr);
+    }
+
+public:
+    static ExtendedPrecisionPopup* create() {
+        auto ret = new ExtendedPrecisionPopup();
+
+        if (ret && ret->init()) {
+            ret->autorelease();
+            return ret;
+        }
+
+        delete ret;
+        return nullptr;
+    }
+};
+
 class $modify(PrecisionEditorUI, EditorUI) {
-
-    static inline bool s_diagnosticsEnabled = false;
-    static inline std::string s_lastDiagnostic =
-        "No movement data yet.";
-
     bool init(LevelEditorLayer* layer) {
         if (!EditorUI::init(layer))
             return false;
 
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto sprite = ButtonSprite::create("EP");
 
-        // Main EP button
-        auto epSprite = ButtonSprite::create("EP");
-
-        auto epButton = CCMenuItemSpriteExtra::create(
-            epSprite,
+        auto button = CCMenuItemSpriteExtra::create(
+            sprite,
             this,
             menu_selector(PrecisionEditorUI::onOpenEP)
         );
 
-        // Diagnostics toggle
-        auto diagSprite = ButtonSprite::create("DIAG");
-
-        auto diagButton = CCMenuItemSpriteExtra::create(
-            diagSprite,
-            this,
-            menu_selector(PrecisionEditorUI::onToggleDiagnostics)
-        );
-
         auto menu = CCMenu::create();
+        menu->addChild(button);
+        menu->setPosition({40.f, 120.f});
 
-        epButton->setPosition(0, 0);
-        diagButton->setPosition(0, -42);
-
-        menu->addChild(epButton);
-        menu->addChild(diagButton);
-
-        menu->setPosition(42, winSize.height - 170);
-        menu->setID("extended-precision-menu"_spr);
-
-        this->addChild(menu, 9999);
-
-        log::info("[EP] In-game menu initialized");
+        this->addChild(menu, 1000);
 
         return true;
     }
 
     void onOpenEP(CCObject*) {
-        std::string objectInfo = "No object selected.";
-
-        if (m_selectedObject) {
-            auto pos = m_selectedObject->getPosition();
-
-            objectInfo = fmt::format(
-                "Selected Object\n"
-                "ID: {}\n"
-                "X: {:.12f}\n"
-                "Y: {:.12f}\n",
-                m_selectedObject->m_uniqueID,
-                static_cast<double>(pos.x),
-                static_cast<double>(pos.y)
-            );
-        }
-
-        std::string body = fmt::format(
-            "EXTENDED PRECISION 1.4\n\n"
-            "Diagnostics: {}\n\n"
-            "{}\n"
-            "Last movement:\n{}",
-            s_diagnosticsEnabled ? "ON" : "OFF",
-            objectInfo,
-            s_lastDiagnostic
-        );
-
-        FLAlertLayer::create(
-            "Extended Precision",
-            body,
-            "Close"
-        )->show();
-    }
-
-    void onToggleDiagnostics(CCObject*) {
-        s_diagnosticsEnabled = !s_diagnosticsEnabled;
-
-        log::info(
-            "[EP] Diagnostics: {}",
-            s_diagnosticsEnabled ? "ON" : "OFF"
-        );
-
-        FLAlertLayer::create(
-            "Extended Precision",
-            s_diagnosticsEnabled
-                ? "Diagnostics enabled!"
-                : "Diagnostics disabled!",
-            "OK"
-        )->show();
-    }
-
-    void moveObject(
-        GameObject* object,
-        cocos2d::CCPoint offset
-    ) {
-        if (!object) {
-            EditorUI::moveObject(object, offset);
-            return;
-        }
-
-        auto before = object->getPosition();
-
-        EditorUI::moveObject(object, offset);
-
-        auto after = object->getPosition();
-
-        if (!s_diagnosticsEnabled)
-            return;
-
-        s_lastDiagnostic = fmt::format(
-            "Object ID: {}\n"
-            "Input X: {:.12f}\n"
-            "Input Y: {:.12f}\n"
-            "Actual X: {:.12f}\n"
-            "Actual Y: {:.12f}",
-            object->m_uniqueID,
-            static_cast<double>(offset.x),
-            static_cast<double>(offset.y),
-            static_cast<double>(after.x) - before.x,
-            static_cast<double>(after.y) - before.y
-        );
-
-        log::info("[EP] {}", s_lastDiagnostic);
+        ExtendedPrecisionPopup::create()->show();
     }
 };

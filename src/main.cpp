@@ -2,21 +2,33 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/EditorUI.hpp>
 
+#include <unordered_map>
 #include <cmath>
-#include <limits>
 
 using namespace geode::prelude;
 
-class $modify(PrecisionDiagnosticEditorUI, EditorUI) {
+struct PrecisionAccumulator {
+    double x = 0.0;
+    double y = 0.0;
+
+    float lastX = 0.0f;
+    float lastY = 0.0f;
+};
+
+class $modify(PrecisionEditorUI, EditorUI) {
+
+    static inline std::unordered_map<
+        GameObject*,
+        PrecisionAccumulator
+    > s_accumulators;
 
     bool init(LevelEditorLayer* layer) {
         if (!EditorUI::init(layer))
             return false;
 
-        log::info("================================");
-        log::info("Extended Precision 1.2");
-        log::info("Precision diagnostics enabled");
-        log::info("================================");
+        s_accumulators.clear();
+
+        log::info("[EP] Double Accumulator 1.3 initialized");
 
         return true;
     }
@@ -30,71 +42,86 @@ class $modify(PrecisionDiagnosticEditorUI, EditorUI) {
             return;
         }
 
-        // Position before movement
-        const auto before = object->getPosition();
+        auto& acc = s_accumulators[object];
 
-        // Let Geometry Dash perform its normal movement
-        EditorUI::moveObject(object, offset);
+        auto before = object->getPosition();
 
-        // Position after movement
-        const auto after = object->getPosition();
+        // Detect movement performed outside this accumulator.
+        if (acc.lastX != before.x || acc.lastY != before.y) {
+            acc.x = 0.0;
+            acc.y = 0.0;
+        }
 
-        // Ignore calls without movement
-        if (offset.x == 0.0f && offset.y == 0.0f)
+        // First movement initializes the stored position.
+        if (acc.lastX == 0.0f && acc.lastY == 0.0f) {
+            acc.lastX = before.x;
+            acc.lastY = before.y;
+        }
+
+        // Accumulate input in double precision.
+        acc.x += static_cast<double>(offset.x);
+        acc.y += static_cast<double>(offset.y);
+
+        // Calculate representable target positions.
+        const float targetX = static_cast<float>(
+            static_cast<double>(before.x) + acc.x
+        );
+
+        const float targetY = static_cast<float>(
+            static_cast<double>(before.y) + acc.y
+        );
+
+        // Only send movement when float can represent it.
+        const float moveX = targetX != before.x
+            ? targetX - before.x
+            : 0.0f;
+
+        const float moveY = targetY != before.y
+            ? targetY - before.y
+            : 0.0f;
+
+        // No representable movement yet.
+        if (moveX == 0.0f && moveY == 0.0f) {
+            acc.lastX = before.x;
+            acc.lastY = before.y;
+
+            log::info(
+                "[EP] Accumulating: X={:.12f} Y={:.12f}",
+                acc.x,
+                acc.y
+            );
+
             return;
+        }
 
-        const float infinity =
-            std::numeric_limits<float>::infinity();
+        // Apply accumulated movement.
+        EditorUI::moveObject(
+            object,
+            cocos2d::CCPoint(moveX, moveY)
+        );
 
-        // Smallest representable float step near current position
-        const float ulpX =
-            std::nextafter(before.x, infinity) - before.x;
+        auto after = object->getPosition();
 
-        const float ulpY =
-            std::nextafter(before.y, infinity) - before.y;
+        // Clear only successfully applied axes.
+        if (after.x != before.x)
+            acc.x = 0.0;
 
-        // Actual movement applied by Geometry Dash
-        const double actualX =
-            static_cast<double>(after.x) - before.x;
+        if (after.y != before.y)
+            acc.y = 0.0;
 
-        const double actualY =
-            static_cast<double>(after.y) - before.y;
+        acc.lastX = after.x;
+        acc.lastY = after.y;
 
         log::info(
-            "[EP] Object ID: {}",
-            object->m_uniqueID
+            "[EP] Applied: X={:.12f} Y={:.12f}",
+            static_cast<double>(after.x) - before.x,
+            static_cast<double>(after.y) - before.y
         );
 
         log::info(
-            "[EP] Input offset: X={:.12f} Y={:.12f}",
-            static_cast<double>(offset.x),
-            static_cast<double>(offset.y)
+            "[EP] Remaining: X={:.12f} Y={:.12f}",
+            acc.x,
+            acc.y
         );
-
-        log::info(
-            "[EP] Before: X={:.12f} Y={:.12f}",
-            static_cast<double>(before.x),
-            static_cast<double>(before.y)
-        );
-
-        log::info(
-            "[EP] After: X={:.12f} Y={:.12f}",
-            static_cast<double>(after.x),
-            static_cast<double>(after.y)
-        );
-
-        log::info(
-            "[EP] Actual delta: X={:.12f} Y={:.12f}",
-            actualX,
-            actualY
-        );
-
-        log::info(
-            "[EP] Float ULP: X={:.12f} Y={:.12f}",
-            static_cast<double>(ulpX),
-            static_cast<double>(ulpY)
-        );
-
-        log::info("[EP] ------------------------------");
     }
 };

@@ -1,3 +1,4 @@
+
 {
     "geode": "5.11.1",
     "gd": {
@@ -6,11 +7,11 @@
         "mac": "2.2081",
         "ios": "2.2081"
     },
-    "version": "v1.1.0",
+    "version": "v1.2.0",
     "id": "fullydraco.extendedprecision",
     "name": "Extended Precision",
     "developer": "fullydraco",
-    "description": "Display custom fake object coordinates in the editor.",
+    "description": "High precision object coordinate storage for the Geometry Dash editor.",
     "settings": {
         "fake-enabled": {
             "name": "Enable Fake Position",

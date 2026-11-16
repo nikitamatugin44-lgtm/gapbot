@@ -1,53 +1,75 @@
 
 #include <Geode/Geode.hpp>
+#include <Geode/modify/EditorUI.hpp>
 
-#include "PrecisionStorage.hpp"
+#include <unordered_map>
+#include <cstdint>
+#include <cmath>
 
 using namespace geode::prelude;
 
-$on_mod(Loaded) {
-    PrecisionStorage storage;
+struct ExtendedPosition {
+    double x = 0.0;
+    double y = 0.0;
+};
 
-    constexpr PrecisionStorage::ObjectKey testObject = 1;
+class $modify(PrecisionEditorUI, EditorUI) {
 
-    storage.setPosition(
-        testObject,
-        45.0,
-        100.0
-    );
+    static inline std::unordered_map<
+        GameObject*,
+        ExtendedPosition
+    > s_positions;
 
-    // 1000 movements of 0.000000001.
-    for (int i = 0; i < 1000; ++i) {
-        storage.moveBy(
-            testObject,
-            0.000000001,
-            0.000000001
+    bool init(LevelEditorLayer* layer) {
+        if (!EditorUI::init(layer))
+            return false;
+
+        // New editor session.
+        s_positions.clear();
+
+        log::info("Extended Precision: Editor connected");
+
+        return true;
+    }
+
+    void moveObject(
+        GameObject* object,
+        cocos2d::CCPoint offset
+    ) {
+        if (!object) {
+            EditorUI::moveObject(object, offset);
+            return;
+        }
+
+        // Initialize the precise position only once.
+        auto [it, inserted] = s_positions.try_emplace(
+            object,
+            ExtendedPosition{
+                static_cast<double>(object->getPositionX()),
+                static_cast<double>(object->getPositionY())
+            }
         );
+
+        auto& precise = it->second;
+
+        // Let Geometry Dash perform its normal movement.
+        EditorUI::moveObject(object, offset);
+
+        // Accumulate the original movement in double.
+        precise.x += static_cast<double>(offset.x);
+        precise.y += static_cast<double>(offset.y);
+
+        // Reject invalid coordinates.
+        if (!std::isfinite(precise.x) ||
+            !std::isfinite(precise.y)) {
+            s_positions.erase(object);
+            return;
+        }
+
+        // Convert only at the engine boundary.
+        object->setPosition({
+            static_cast<float>(precise.x),
+            static_cast<float>(precise.y)
+        });
     }
-
-    auto position = storage.getPosition(testObject);
-
-    if (!position) {
-        log::error("Extended Precision: storage test failed!");
-        return;
-    }
-
-    log::info(
-        "Extended Precision: storage test passed!"
-    );
-
-    log::info(
-        "Exact X: {}",
-        PrecisionStorage::formatNumber(position->x)
-    );
-
-    log::info(
-        "Exact Y: {}",
-        PrecisionStorage::formatNumber(position->y)
-    );
-
-    log::info(
-        "Object count: {}",
-        storage.size()
-    );
-}
+};

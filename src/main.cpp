@@ -2,35 +2,105 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/EditorUI.hpp>
 
-#include <unordered_map>
-#include <cmath>
-
 using namespace geode::prelude;
-
-struct PrecisionAccumulator {
-    double x = 0.0;
-    double y = 0.0;
-
-    float lastX = 0.0f;
-    float lastY = 0.0f;
-};
 
 class $modify(PrecisionEditorUI, EditorUI) {
 
-    static inline std::unordered_map<
-        GameObject*,
-        PrecisionAccumulator
-    > s_accumulators;
+    static inline bool s_diagnosticsEnabled = false;
+    static inline std::string s_lastDiagnostic =
+        "No movement data yet.";
 
     bool init(LevelEditorLayer* layer) {
         if (!EditorUI::init(layer))
             return false;
 
-        s_accumulators.clear();
+        auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-        log::info("[EP] Double Accumulator 1.3 initialized");
+        // Main EP button
+        auto epSprite = ButtonSprite::create("EP");
+
+        auto epButton = CCMenuItemSpriteExtra::create(
+            epSprite,
+            this,
+            menu_selector(PrecisionEditorUI::onOpenEP)
+        );
+
+        // Diagnostics toggle
+        auto diagSprite = ButtonSprite::create("DIAG");
+
+        auto diagButton = CCMenuItemSpriteExtra::create(
+            diagSprite,
+            this,
+            menu_selector(PrecisionEditorUI::onToggleDiagnostics)
+        );
+
+        auto menu = CCMenu::create();
+
+        epButton->setPosition(0, 0);
+        diagButton->setPosition(0, -42);
+
+        menu->addChild(epButton);
+        menu->addChild(diagButton);
+
+        menu->setPosition(42, winSize.height - 170);
+        menu->setID("extended-precision-menu"_spr);
+
+        this->addChild(menu, 9999);
+
+        log::info("[EP] In-game menu initialized");
 
         return true;
+    }
+
+    void onOpenEP(CCObject*) {
+        std::string objectInfo = "No object selected.";
+
+        if (m_selectedObject) {
+            auto pos = m_selectedObject->getPosition();
+
+            objectInfo = fmt::format(
+                "Selected Object\n"
+                "ID: {}\n"
+                "X: {:.12f}\n"
+                "Y: {:.12f}\n",
+                m_selectedObject->m_uniqueID,
+                static_cast<double>(pos.x),
+                static_cast<double>(pos.y)
+            );
+        }
+
+        std::string body = fmt::format(
+            "EXTENDED PRECISION 1.4\n\n"
+            "Diagnostics: {}\n\n"
+            "{}\n"
+            "Last movement:\n{}",
+            s_diagnosticsEnabled ? "ON" : "OFF",
+            objectInfo,
+            s_lastDiagnostic
+        );
+
+        FLAlertLayer::create(
+            "Extended Precision",
+            body,
+            "Close"
+        )->show();
+    }
+
+    void onToggleDiagnostics(CCObject*) {
+        s_diagnosticsEnabled = !s_diagnosticsEnabled;
+
+        log::info(
+            "[EP] Diagnostics: {}",
+            s_diagnosticsEnabled ? "ON" : "OFF"
+        );
+
+        FLAlertLayer::create(
+            "Extended Precision",
+            s_diagnosticsEnabled
+                ? "Diagnostics enabled!"
+                : "Diagnostics disabled!",
+            "OK"
+        )->show();
     }
 
     void moveObject(
@@ -42,86 +112,28 @@ class $modify(PrecisionEditorUI, EditorUI) {
             return;
         }
 
-        auto& acc = s_accumulators[object];
-
         auto before = object->getPosition();
 
-        // Detect movement performed outside this accumulator.
-        if (acc.lastX != before.x || acc.lastY != before.y) {
-            acc.x = 0.0;
-            acc.y = 0.0;
-        }
-
-        // First movement initializes the stored position.
-        if (acc.lastX == 0.0f && acc.lastY == 0.0f) {
-            acc.lastX = before.x;
-            acc.lastY = before.y;
-        }
-
-        // Accumulate input in double precision.
-        acc.x += static_cast<double>(offset.x);
-        acc.y += static_cast<double>(offset.y);
-
-        // Calculate representable target positions.
-        const float targetX = static_cast<float>(
-            static_cast<double>(before.x) + acc.x
-        );
-
-        const float targetY = static_cast<float>(
-            static_cast<double>(before.y) + acc.y
-        );
-
-        // Only send movement when float can represent it.
-        const float moveX = targetX != before.x
-            ? targetX - before.x
-            : 0.0f;
-
-        const float moveY = targetY != before.y
-            ? targetY - before.y
-            : 0.0f;
-
-        // No representable movement yet.
-        if (moveX == 0.0f && moveY == 0.0f) {
-            acc.lastX = before.x;
-            acc.lastY = before.y;
-
-            log::info(
-                "[EP] Accumulating: X={:.12f} Y={:.12f}",
-                acc.x,
-                acc.y
-            );
-
-            return;
-        }
-
-        // Apply accumulated movement.
-        EditorUI::moveObject(
-            object,
-            cocos2d::CCPoint(moveX, moveY)
-        );
+        EditorUI::moveObject(object, offset);
 
         auto after = object->getPosition();
 
-        // Clear only successfully applied axes.
-        if (after.x != before.x)
-            acc.x = 0.0;
+        if (!s_diagnosticsEnabled)
+            return;
 
-        if (after.y != before.y)
-            acc.y = 0.0;
-
-        acc.lastX = after.x;
-        acc.lastY = after.y;
-
-        log::info(
-            "[EP] Applied: X={:.12f} Y={:.12f}",
+        s_lastDiagnostic = fmt::format(
+            "Object ID: {}\n"
+            "Input X: {:.12f}\n"
+            "Input Y: {:.12f}\n"
+            "Actual X: {:.12f}\n"
+            "Actual Y: {:.12f}",
+            object->m_uniqueID,
+            static_cast<double>(offset.x),
+            static_cast<double>(offset.y),
             static_cast<double>(after.x) - before.x,
             static_cast<double>(after.y) - before.y
         );
 
-        log::info(
-            "[EP] Remaining: X={:.12f} Y={:.12f}",
-            acc.x,
-            acc.y
-        );
+        log::info("[EP] {}", s_lastDiagnostic);
     }
 };
